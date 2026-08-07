@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Next Payment Date Month Splitter v1.9.5</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#f5f7fb;color:#1f2937}header{background:#0b5cab;color:#fff;text-align:center;padding:14px}h1{font-size:1.25rem;margin:0}.sub{font-size:.9rem;margin-top:4px}main{max-width:1150px;margin:auto;padding:14px}.card{background:white;border:1px solid #cbd5e1;border-radius:14px;padding:14px;margin:12px 0;box-shadow:0 2px 8px #0001}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}label{font-weight:bold}input,select,button{padding:10px;border-radius:10px;border:1px solid #cbd5e1;min-height:42px}button{background:#0b5cab;color:white;border:0;font-weight:bold;cursor:pointer}button:disabled{background:#94a3b8}.good{background:#157347}.muted{color:#667085}.status{white-space:pre-wrap;background:#eaf4ff;border:1px solid #bfd7ef;padding:10px;border-radius:10px}.tablewrap{overflow:auto;max-height:380px;border:1px solid #cbd5e1;border-radius:10px}table{border-collapse:collapse;width:100%;font-size:.88rem}th,td{border-bottom:1px solid #e5e7eb;padding:7px 9px;white-space:nowrap;text-align:left}th{background:#f2f4f7;position:sticky;top:0}.pill{display:inline-block;background:#eef4ff;border:1px solid #b2ccff;color:#1849a9;border-radius:999px;padding:8px 12px;margin:3px;font-weight:bold;cursor:pointer}.pill:hover{background:#dbeafe}.pill.active{background:#0b5cab;color:#fff;border-color:#0b5cab}.pill.overdue6{background:#dc2626;color:#fff;border-color:#b91c1c}.pill.overdue6:hover{background:#b91c1c}.pill.overdue6.active{background:#991b1b;color:#fff;border-color:#7f1d1d}.hidden{display:none}.checkgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:6px}.checkgrid label{font-weight:normal;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:7px}.small{font-size:.88rem}.dashgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.metric{background:#f8fafc;border:1px solid #dbe3ec;border-radius:12px;padding:14px}.metric .k{font-size:.82rem;color:#667085;text-transform:uppercase;font-weight:bold;letter-spacing:.04em}.metric .v{font-size:1.7rem;font-weight:800;margin-top:5px}.chartgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px;margin-top:14px}.chartbox{background:white;border:1px solid #dbe3ec;border-radius:12px;padding:12px;height:310px;min-height:0;overflow:hidden}.chartbox h3{margin:0 0 8px;font-size:1rem}.chartbox canvas{width:100% !important;height:250px !important;max-height:250px;display:block}.small{font-size:.88rem}footer{text-align:center;color:#667085;font-size:.85rem;padding:18px 10px 24px}</style>
+</head>
+<body>
+<header><h1>Next Payment Date Month Splitter</h1><div class="sub">Version 1.9.5 — Summary turns red when any Next Payment Date is more than 13 months after today</div></header>
+<main>
+<section class="card">
+  <h2>1. Load Excel or CSV</h2>
+  <div class="row"><input id="fileInput" type="file" accept=".xlsx,.xls,.csv"><select id="sheetSelect"></select></div>
+  <p class="muted">The app reads the selected sheet, groups rows by <b>Next Payment Date</b>, and exports a new Excel workbook.</p>
+</section>
+<section class="card">
+  <h2>2. Columns</h2>
+  <div class="row"><label>Date column</label><select id="dateCol"></select><label>Squadron column</label><select id="squadronCol"></select></div>
+  <h3>Financial Summary</h3>
+  <p class="muted">The Financial Summary tab totals the <b>Order Total</b> column only and formats the exported cells as dollars.</p>
+  <div id="financeChecks" class="checkgrid"></div>
+  <div class="row" style="margin-top:10px"><button id="processBtn" disabled>Process File</button><button id="exportBtn" class="good" disabled>Export Excel Workbook</button></div>
+  <div id="status" class="status">Load a file to begin.</div>
+</section>
+<section id="dashboardCard" class="card hidden">
+  <h2>Dashboard</h2>
+  <div class="dashgrid">
+    <div class="metric"><div class="k">Total Records</div><div class="v" id="dashRecords">0</div></div>
+    <div class="metric"><div class="k">Squadrons</div><div class="v" id="dashSquadrons">0</div></div>
+    <div class="metric"><div class="k">Months</div><div class="v" id="dashMonths">0</div></div>
+    <div class="metric"><div class="k">Order Total</div><div class="v" id="dashRevenue">$0.00</div></div>
+  </div>
+  <div class="chartgrid">
+    <div class="chartbox"><h3>Records by Month</h3><canvas id="monthCountChart"></canvas></div>
+    <div class="chartbox"><h3>Order Total by Month</h3><canvas id="monthRevenueChart"></canvas></div>
+    <div class="chartbox"><h3>Records by Squadron</h3><canvas id="squadronCountChart"></canvas></div>
+    <div class="chartbox"><h3>Order Total by Squadron</h3><canvas id="squadronRevenueChart"></canvas></div>
+  </div>
+</section>
+<section id="resultCard" class="card hidden">
+  <h2>Export will contain these tabs</h2>
+  <div id="tabs"></div>
+  <h3 id="previewTitle">Summary Records</h3><div class="tablewrap"><table id="preview"></table></div><p id="previewCount" class="muted small"></p>
+</section>
+</main>
+<footer>&copy; Glen Carruthers</footer>
+<script>
+const $=id=>document.getElementById(id);let wb=null, rows=[], headers=[], outputWb=null, base='month_split';
+const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
+function norm(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+function clean(s){return String(s??'').trim();}
+function status(s){$('status').textContent=s;}
+function safeName(n){return String(n).replace(/[\\/?*\[\]:]/g,' ').substring(0,31)||'Sheet';}
+function parseDate(v){if(v==null||v==='')return null;if(v instanceof Date&&!isNaN(v))return v;if(typeof v==='number'){const d=XLSX.SSF.parse_date_code(v);if(d)return new Date(d.y,d.m-1,d.d);}let s=String(v).trim();let d=new Date(s);if(!isNaN(d))return d;let m=s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);if(m){let y=+m[3];if(y<100)y+=2000;d=new Date(y,+m[1]-1,+m[2]);if(!isNaN(d))return d;}return null;}
+function mkey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function mlabel(k){if(k==='Invalid or Blank Date')return k;const [y,m]=k.split('-').map(Number);return monthNames[m-1]+' '+y;}
+function money(v){if(v==null||v==='')return 0;if(typeof v==='number'&&isFinite(v))return v;let s=String(v).trim();let neg=false;if(/^\(.*\)$/.test(s)){neg=true;s=s.replace(/[()]/g,'')}s=s.replace(/[$,£€\s]/g,'').replace(/%$/,'');let n=parseFloat(s);return isFinite(n)?(neg?-n:n):0;}
+function round2(n){return Math.round((n+Number.EPSILON)*100)/100;}
+function isFinancial(h){let n=norm(h);if(n.includes('date')||n.includes('id')||n.includes('phone')||n.includes('postal')||n.includes('zip')||n.includes('year'))return false;return ['amount','fee','fees','dues','due','total','subtotal','tax','hst','gst','pst','qst','price','cost','charge','payment','paid','balance','revenue','credit','debit','donation','contribution'].some(w=>n.includes(w));}
+function numericLikely(h){let checked=0,num=0;for(const r of rows.slice(0,120)){let v=r[h];if(v==null||String(v).trim()==='')continue;checked++;if(typeof v==='number'||/^\(?\$?\s*-?\d{1,3}(,\d{3})*(\.\d+)?\)?$/.test(String(v).trim())||/^\(?\$?\s*-?\d+(\.\d+)?\)?$/.test(String(v).trim()))num++;}return checked>=3&&num/checked>=.85;}
+function fillSelects(){for(const sel of [$('dateCol'),$('squadronCol')]){sel.innerHTML='';headers.forEach(h=>{let o=document.createElement('option');o.value=h;o.textContent=h;sel.appendChild(o);});}
+let d=headers.find(h=>norm(h)==='nextpaymentdate')||headers.find(h=>norm(h).includes('paymentdate'))||headers.find(h=>norm(h).includes('date'))||headers[0];let s=headers.find(h=>norm(h)==='squadron')||headers.find(h=>norm(h).includes('squadron'))||headers[0];$('dateCol').value=d;$('squadronCol').value=s;fillChecks();}
+function fillChecks(){
+  const holder=$('financeChecks');
+  const found=headers.find(h=>norm(h)==='ordertotal') || headers.find(h=>norm(h).includes('ordertotal'));
+  if(found){
+    holder.innerHTML=`<label><input type="checkbox" checked disabled> Order Total column found: <b>${found}</b></label>`;
+  }else{
+    holder.innerHTML=`<label style="background:#fff4e5;border-color:#f6c177">Order Total column was not found. The Financial Summary tab will show zero totals until the file has a column named <b>Order Total</b>.</label>`;
+  }
+}
+function checkedFinance(){
+  const found=headers.find(h=>norm(h)==='ordertotal') || headers.find(h=>norm(h).includes('ordertotal'));
+  return found ? [found] : [];
+}
+
+function forceDollarFormat(ws, headerRows=1, firstMoneyCol=1){
+  if(!ws['!ref'])return;
+  const range=XLSX.utils.decode_range(ws['!ref']);
+  for(let R=headerRows; R<=range.e.r; ++R){
+    for(let C=firstMoneyCol; C<=range.e.c; ++C){
+      const addr=XLSX.utils.encode_cell({r:R,c:C});
+      let cell=ws[addr];
+      if(!cell){cell=ws[addr]={t:'n',v:0};}
+      let n=(typeof cell.v==='number')?cell.v:money(cell.v);
+      cell.t='n';
+      cell.v=round2(n);
+      cell.w=undefined;
+      cell.z='"$"#,##0.00;[Red]"$"-#,##0.00';
+    }
+  }
+}
+function dollarText(v){return '$'+Number(v||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
+
+function formatCurrencySheet(ws, headerRows=1){
+  if(!ws['!ref'])return;
+  const range=XLSX.utils.decode_range(ws['!ref']);
+  for(let R=headerRows; R<=range.e.r; ++R){
+    for(let C=1; C<=range.e.c; ++C){
+      const addr=XLSX.utils.encode_cell({r:R,c:C});
+      const cell=ws[addr];
+      if(cell && typeof cell.v==='number'){
+        cell.t='n';
+        cell.z='$#,##0.00';
+      }
+    }
+  }
+}
+function formatCountSheet(ws, headerRows=1){
+  if(!ws['!ref'])return;
+  const range=XLSX.utils.decode_range(ws['!ref']);
+  for(let R=headerRows; R<=range.e.r; ++R){
+    for(let C=1; C<=range.e.c; ++C){
+      const addr=XLSX.utils.encode_cell({r:R,c:C});
+      const cell=ws[addr];
+      if(cell && typeof cell.v==='number'){cell.t='n';cell.z='0';}
+    }
+  }
+}
+function setWidths(ws,widths){ws['!cols']=widths.map(w=>({wch:w}));}
+function previewTable(data, cols, limit=null){let t=$('preview');t.innerHTML='';let tr=document.createElement('tr');cols.forEach(c=>{let th=document.createElement('th');th.textContent=c;tr.appendChild(th)});t.appendChild(tr);let shown=limit?data.slice(0,limit):data;shown.forEach(r=>{let tr=document.createElement('tr');cols.forEach(c=>{let td=document.createElement('td');td.textContent=r[c]??'';tr.appendChild(td)});t.appendChild(tr)});}
+function openOutputTab(name){if(!outputWb||!outputWb.Sheets[name])return;let data=XLSX.utils.sheet_to_json(outputWb.Sheets[name],{defval:'',raw:false});let cols=data.length?Object.keys(data[0]):[];$('previewTitle').textContent=name+' Records';$('previewCount').textContent=data.length.toLocaleString()+' record'+(data.length===1?'':'s')+' shown';previewTable(data,cols);document.querySelectorAll('#tabs .pill').forEach(b=>b.classList.toggle('active',b.dataset.sheet===name));}
+function thirteenMonthsAfterToday(){let t=new Date();t.setHours(0,0,0,0);let d=new Date(t);d.setMonth(d.getMonth()+13);return d;}
+function tabHasRecordOverSixMonthsAhead(name){if(!outputWb||!outputWb.Sheets[name]||name==='Summary'||name==='Financial Summary')return false;let data=XLSX.utils.sheet_to_json(outputWb.Sheets[name],{defval:'',raw:false});let dcol=$('dateCol').value,cut=thirteenMonthsAfterToday();return data.some(r=>{let d=parseDate(r[dcol]);return d&&d>cut;});}
+function buildTabButtons(){let holder=$('tabs');holder.innerHTML='';let dcol=$('dateCol').value,cut=thirteenMonthsAfterToday();let anyFuture13=rows.some(r=>{let d=parseDate(r[dcol]);return d&&d>cut;});outputWb.SheetNames.forEach((n,i)=>{let b=document.createElement('button');b.type='button';let future13=(n==='Summary'&&anyFuture13)||tabHasRecordOverSixMonthsAhead(n);b.className='pill'+(future13?' overdue6':'')+(i===0?' active':'');b.dataset.sheet=n;b.textContent=n+(future13?' ⚠':'');if(future13)b.title=n==='Summary'?'One or more records have a Next Payment Date more than 13 months after today':'Contains a Next Payment Date more than 13 months after today';b.addEventListener('click',()=>openOutputTab(n));holder.appendChild(b);});}
+
+let dashCharts=[];
+function destroyDashCharts(){dashCharts.forEach(c=>{try{c.destroy()}catch(e){}});dashCharts=[];}
+function makeChart(id,type,labels,data,label,moneyAxis=false){
+  const el=$(id); if(!el||typeof Chart==='undefined') return;
+  const c=new Chart(el,{type,data:{labels,datasets:[{label,data}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:(ctx)=>moneyAxis?dollarText(ctx.raw):Number(ctx.raw||0).toLocaleString()}}},scales:{y:{beginAtZero:true,ticks:{callback:(v)=>moneyAxis?'$'+Number(v).toLocaleString():Number(v).toLocaleString()}}}}});
+  dashCharts.push(c);
+}
+function buildDashboard(keys,counts,fin,squads,fcols,invalid){
+  const monthLabels=keys.filter(k=>k!=='Invalid or Blank Date').map(mlabel);
+  const validKeys=keys.filter(k=>k!=='Invalid or Blank Date');
+  const monthCounts=validKeys.map(k=>Object.values(counts[k]||{}).reduce((a,b)=>a+b,0));
+  const fc=fcols[0];
+  const monthRevenue=validKeys.map(k=>round2(squads.reduce((a,sq)=>a+(fc?(fin[fc]?.[sq]?.[k]||0):0),0)));
+  const squadCounts=squads.map(sq=>keys.reduce((a,k)=>a+(counts[k]?.[sq]||0),0));
+  const squadRevenue=squads.map(sq=>round2(keys.reduce((a,k)=>a+(fc?(fin[fc]?.[sq]?.[k]||0):0),0)));
+  $('dashRecords').textContent=rows.length.toLocaleString();
+  $('dashSquadrons').textContent=squads.length.toLocaleString();
+  $('dashMonths').textContent=validKeys.length.toLocaleString();
+  $('dashRevenue').textContent=dollarText(monthRevenue.reduce((a,b)=>a+b,0));
+  $('dashboardCard').classList.remove('hidden');
+  destroyDashCharts();
+  makeChart('monthCountChart','bar',monthLabels,monthCounts,'Records');
+  makeChart('monthRevenueChart','bar',monthLabels,monthRevenue,'Order Total',true);
+  makeChart('squadronCountChart','bar',squads,squadCounts,'Records');
+  makeChart('squadronRevenueChart','bar',squads,squadRevenue,'Order Total',true);
+}
+function process(){let dcol=$('dateCol').value, scol=$('squadronCol').value, fcols=checkedFinance();let groups={}, counts={}, fin={}, invalid=0, squadSet=new Set();rows.forEach(r=>{let d=parseDate(r[dcol]);let k=d?mkey(d):'Invalid or Blank Date';if(!d)invalid++;let sq=clean(r[scol])||'Blank Squadron';squadSet.add(sq);(groups[k]??=[]).push({...r,'Split Month':mlabel(k),'Split Month Key':k});counts[k]??={};counts[k][sq]=(counts[k][sq]||0)+1;fcols.forEach(fc=>{fin[fc]??={};fin[fc][sq]??={};fin[fc][sq][k]=(fin[fc][sq][k]||0)+money(r[fc]);});});let keys=Object.keys(groups).sort((a,b)=>a==='Invalid or Blank Date'?1:b==='Invalid or Blank Date'?-1:a.localeCompare(b));let labels=keys.map(mlabel);let squads=Array.from(squadSet).sort();let countRows=squads.map(sq=>{let row={Squadron:sq},tot=0;keys.forEach(k=>{let v=counts[k]?.[sq]||0;row[mlabel(k)]=v;tot+=v});row.Total=tot;return row});let total={Squadron:'TOTAL'},gt=0;keys.forEach(k=>{let v=Object.values(counts[k]||{}).reduce((a,b)=>a+b,0);total[mlabel(k)]=v;gt+=v});total.Total=gt;countRows.push(total);
+let finRows=[];if(fcols.length){fcols.forEach(fc=>{squads.forEach(sq=>{let row={'Financial Column':fc,Squadron:sq},tot=0;keys.forEach(k=>{let v=fin[fc]?.[sq]?.[k]||0;row[mlabel(k)]=round2(v);tot+=v});row.Total=round2(tot);finRows.push(row)});let row={'Financial Column':fc,Squadron:'TOTAL'},tot=0;keys.forEach(k=>{let v=squads.reduce((a,sq)=>a+(fin[fc]?.[sq]?.[k]||0),0);row[mlabel(k)]=round2(v);tot+=v});row.Total=round2(tot);finRows.push(row);});}else{finRows=[{'Financial Column':'Order Total column not found',Squadron:'',Total:0}];}
+buildDashboard(keys,counts,fin,squads,fcols,invalid);
+outputWb=XLSX.utils.book_new();
+let summaryWs=XLSX.utils.json_to_sheet(countRows,{header:['Squadron',...labels,'Total']});
+formatCountSheet(summaryWs,1);
+setWidths(summaryWs,[24,...labels.map(()=>14),14]);
+XLSX.utils.book_append_sheet(outputWb,summaryWs,'Summary');
+let finWs=XLSX.utils.json_to_sheet(finRows,{header:['Financial Column','Squadron',...labels,'Total']});
+forceDollarFormat(finWs,1,2);
+setWidths(finWs,[20,24,...labels.map(()=>16),16]);
+XLSX.utils.book_append_sheet(outputWb,finWs,'Financial Summary');
+keys.forEach(k=>XLSX.utils.book_append_sheet(outputWb,XLSX.utils.json_to_sheet(groups[k]),safeName(mlabel(k))));$('exportBtn').disabled=false;$('resultCard').classList.remove('hidden');buildTabButtons();openOutputTab('Summary');status(`Processing complete.\nRows read: ${rows.length}\nBlank/unreadable dates: ${invalid}\nFinancial column used: ${fcols.length ? fcols.join(', ') : 'none'}\nClick any tab button below the dashboard to view its actual records in the app.`);}
+$('fileInput').addEventListener('change',async e=>{let file=e.target.files[0];if(!file)return;base=(file.name||'month_split').replace(/\.[^.]+$/,'')+'_month_split';let data=await file.arrayBuffer();wb=XLSX.read(data,{type:'array',cellDates:true});$('sheetSelect').innerHTML='';wb.SheetNames.forEach(n=>{let o=document.createElement('option');o.value=n;o.textContent=n;$('sheetSelect').appendChild(o)});loadSheet(wb.SheetNames[0]);});
+function loadSheet(n){let ws=wb.Sheets[n];rows=XLSX.utils.sheet_to_json(ws,{defval:'',raw:false});headers=rows.length?Object.keys(rows[0]):[];fillSelects();$('processBtn').disabled=!rows.length;$('exportBtn').disabled=true;$('dashboardCard').classList.add('hidden');destroyDashCharts();status(`Loaded ${rows.length} rows from sheet "${n}". Check financial columns, then click Process File.`);}
+$('sheetSelect').addEventListener('change',e=>loadSheet(e.target.value));$('dateCol').addEventListener('change',fillChecks);$('squadronCol').addEventListener('change',fillChecks);$('processBtn').addEventListener('click',process);$('exportBtn').addEventListener('click',()=>{if(!outputWb)return;XLSX.writeFile(outputWb,base+'.xlsx');});
+</script>
+</body></html>
